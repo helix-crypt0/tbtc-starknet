@@ -8,7 +8,13 @@ trait IL2TBTC<TContractState> {
     fn unpause(ref self: TContractState);
     fn burn(ref self: TContractState, value: u256);
     fn mint(ref self: TContractState, recipient: ContractAddress, amount: u256);
-}
+    fn addMinter(ref self: TContractState, minter: ContractAddress);
+    fn removeMinter(ref self: TContractState, minter: ContractAddress);
+    fn addGuardian(ref self: TContractState, guardian: ContractAddress);
+    fn removeGuardian(ref self: TContractState, guardian: ContractAddress);
+    fn getMinters(ref self: TContractState) -> Array<ContractAddress>;
+    fn getGuardians(ref self: TContractState) -> Array<ContractAddress>;
+}   
 
 #[starknet::contract]
 mod L2TBTC {
@@ -21,7 +27,7 @@ use openzeppelin::access::ownable::OwnableComponent;
     use starknet::{ClassHash, ContractAddress, get_caller_address};
     use starknet::storage::{
         StoragePointerReadAccess, StoragePointerWriteAccess, StoragePathEntry, Map,
-        Vec, VecTrait, MutableVecTrait
+        Vec, MutableVecTrait
     };
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
@@ -54,9 +60,11 @@ use openzeppelin::access::ownable::OwnableComponent;
         #[substorage(v0)]
         upgradeable: UpgradeableComponent::Storage,
 
-        is_minter: Map<ContractAddress, bool>,
+        // need getters for these
+        isMinter: Map<ContractAddress, bool>,
         minters:  Vec<ContractAddress>,
-
+        isGuardian: Map<ContractAddress, bool>,
+        guardians: Vec<ContractAddress>,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -68,6 +76,17 @@ use openzeppelin::access::ownable::OwnableComponent;
     struct MinterRemoved {
         minter: ContractAddress,
     }
+
+    #[derive(Drop, starknet::Event)]
+    struct GuardianAdded {
+        guardian: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct GuardianRemoved {
+        guardian: ContractAddress,
+    }
+
 
     #[event]
     #[derive(Drop, starknet::Event)]
@@ -83,6 +102,8 @@ use openzeppelin::access::ownable::OwnableComponent;
 
         MinterAdded: MinterAdded,
         MinterRemoved: MinterRemoved,
+        GuardianAdded: GuardianAdded,
+        GuardianRemoved: GuardianRemoved,
     }
 
     #[constructor]
@@ -102,15 +123,30 @@ use openzeppelin::access::ownable::OwnableComponent;
             contract_state.pausable.assert_not_paused();
         }
     }
+
+    // Internal implementation for role access control
+    #[generate_trait]
+    impl InternalRolesImpl of InternalRolesTrait {
+
+        fn is_minter(self: @ContractState, caller: ContractAddress) -> bool {
+            self.isMinter.entry(caller).read()
+        }
+
+        fn is_guardian(self: @ContractState, caller: ContractAddress) -> bool {
+            self.isGuardian.entry(caller).read()
+        }
+    }
     
     #[generate_trait]
     #[abi(per_item)]
     impl ExternalImpl of ExternalTrait {
+        // assert minter for mints
+        // assert guardian for pause
         #[external(v0)]
         fn pause(ref self: ContractState) {
-            self.ownable.assert_only_owner();
+            let caller = get_caller_address();
+            assert(InternalRolesImpl::is_guardian(@self, caller), 'Caller is not a guardian');
             self.pausable.pause();
-            //println!("pause");
         }
 
         #[external(v0)]
@@ -127,36 +163,96 @@ use openzeppelin::access::ownable::OwnableComponent;
         #[external(v0)]
         fn mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
             let caller = get_caller_address();
-            let num_minters = self.minters.len();
-            let mut is_minter = false;
-            for i in 0..num_minters {
-                let minter = self.minters.at(i).read();
-                if minter == caller {
-                    is_minter = true;
-                    break;
-                }
-            };
-            assert(self.ownable.owner() == caller || is_minter, 'not owner or minter');
+            
+            // Check if caller is owner or minter
+            let is_owner = self.ownable.owner() == caller;
+            let is_minter = InternalRolesImpl::is_minter(@self, caller);
+            
+            assert(is_owner || is_minter, 'not owner or minter');
             self.erc20.mint(recipient, amount);
         }
-
+        
         #[external(v0)]
-        fn add_minter(ref self: ContractState, minter: ContractAddress) {
+        fn addMinter(ref self: ContractState, minter: ContractAddress) {
             self.ownable.assert_only_owner();
-            self.is_minter.entry(minter).write(true);
-            self.minters.append().write(minter);
+            assert(!InternalRolesImpl::is_minter(@self, minter), 'Already a minter');
+            self.isMinter.entry(minter).write(true);
+            self.minters.push(minter);
             self.emit(MinterAdded { minter });
         }
 
         #[external(v0)]
-        fn remove_minter(ref self: ContractState, minter: ContractAddress) {
+        fn removeMinter(ref self: ContractState, minter: ContractAddress) {
             self.ownable.assert_only_owner();
-            self.is_minter.entry(minter).write(false);
-            // Find and remove the minter from the array
+            self.isMinter.entry(minter).write(false);
+    
+            let minters_len = self.minters.len();
+            for i in 0..minters_len {
+                if self.minters.at(i).read() == minter {
+                    if i < minters_len - 1 {
+                        let last_minter = self.minters.at(minters_len - 1).read();
+                        self.minters.at(i).write(last_minter);
+                    }
+                    // Directly call pop() on the storage vector.
+                    let _ = self.minters.pop();
+                    break;
+                }
+            };
+    
             self.emit(MinterRemoved { minter });
         }
-    }
 
+        #[external(v0)]
+        fn addGuardian(ref self: ContractState, guardian: ContractAddress) {
+            self.ownable.assert_only_owner();
+            assert(!self.isGuardian.entry(guardian).read(), 'Already a guardian');
+            self.isGuardian.entry(guardian).write(true);
+            self.guardians.push(guardian);
+            self.emit(GuardianAdded { guardian });
+        }
+
+        #[external(v0)]
+        fn removeGuardian(ref self: ContractState, guardian: ContractAddress) {
+            self.ownable.assert_only_owner();
+            self.isGuardian.entry(guardian).write(false);
+
+            let guardians_len = self.guardians.len();
+            for i in 0..guardians_len {
+                if self.guardians.at(i).read() == guardian {
+                    if i < guardians_len - 1 {
+                        let last_guardian = self.guardians.at(guardians_len - 1).read();
+                        self.guardians.at(i).write(last_guardian);
+                    }
+                    let _ = self.guardians.pop();
+                    break;
+                }
+            };
+            
+
+            self.emit(GuardianRemoved { guardian });
+        }
+
+        #[external(v0)]
+        fn getMinters(ref self: ContractState) -> Array<ContractAddress> {
+            let mut minters_array = array![];
+            let minters_len = self.minters.len();
+            for i in 0..minters_len {
+                minters_array.append(self.minters.at(i).read());
+            }
+            minters_array
+        }
+
+        #[external(v0)]
+        fn getGuardians(ref self: ContractState) -> Array<ContractAddress> {
+            let mut guardians_array = array![];
+            let guardians_len = self.guardians.len();
+            for i in 0..guardians_len {
+                guardians_array.append(self.guardians.at(i).read());
+            }
+            guardians_array
+        }
+
+    }
 
 
     //

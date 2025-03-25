@@ -28,6 +28,31 @@ source src/.env
 snforge test
 ```
 
+# Setting up Environment Variables
+In order to use command line tools like starkli to interact with contracts, we need to setup env variables.
+Once katana is installed run it in a terminal tab. You should see information for a list of pre-funded
+accounts like so:
+```
+| Account address |  0x127fd5f1fe78a71f8bcd1fec63e3fe2f0486b6ecd5c86a0466c3a21fa5cfcec
+| Private key     |  0xc5b2fcab997346f3ea1c00b002ecf6f382c5f9c9659a3894eb783c5320f912
+| Public key      |  0x33246ce85ebdc292e6a5c5b4dd51fab2757be34b8ffda847ca6925edf31cb67
+```
+
+We want to use this account to interact with our contracts on the command line. Run the following command
+```
+starkli signer keystore from-key ./keys/katana-0.json
+```
+Then paste the private key from the pre-funded katana account when prompted.
+
+In your .env file you should have something similar to the following:
+```
+export STARKNET_ACCOUNT=katana-0        #A pre-funded account on the local development network.
+export STARKNET_RPC=http://0.0.0.0:5050 #To specify the network, targeting the local katana devnet.
+export STARKNET_KEYSTORE_PATH=./keys/katana-0.json
+```
+
+Before running any starkli commands make sure to source your env file in your current terminal tab.
+
 # Deploying to a local network
 Run katana in a separate terminal tab
 ```
@@ -56,6 +81,12 @@ To deploy use the following command with the class hash from above
 starkli deploy [class-hash]
 ```
 
+You should see output similar to the following
+```
+
+```
+## Interacting with the contract
+You can now interact with the contract functions that have been deployed
 # Deploying to a Testnet
 
 # Troubleshooting
