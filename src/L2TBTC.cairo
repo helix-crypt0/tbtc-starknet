@@ -114,7 +114,7 @@ mod L2TBTC {
         GuardianAdded: GuardianAdded,
         GuardianRemoved: GuardianRemoved,
     }
-
+    
     #[constructor]
     fn constructor(ref self: ContractState, owner: ContractAddress) {
         self.erc20.initializer("Starknet tBTC", "tBTC");

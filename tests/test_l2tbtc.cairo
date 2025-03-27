@@ -6,6 +6,7 @@ use snforge_std::{
 use starknet::{ContractAddress, contract_address_const};
 // Import openzeppelin traits for the components used in L2TBTC
 use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
+use openzeppelin::token::erc20::ERC20Component;
 use openzeppelin::token::erc721::interface::{IERC721Dispatcher, ERC721ABIDispatcher, ERC721ABIDispatcherTrait};
 use openzeppelin::access::ownable::interface::{IOwnableDispatcher, IOwnableDispatcherTrait};
 use openzeppelin::security::pausable::PausableComponent::{PausableImpl};
@@ -32,6 +33,16 @@ struct GuardianRemoved {
     guardian: ContractAddress,
 }
 
+#[derive(Drop, starknet::Event)]
+struct Paused {
+    account: ContractAddress,
+}
+
+#[derive(Drop, starknet::Event)]
+struct Unpaused {
+    account: ContractAddress,
+}
+
 // Define event enum for testing
 #[derive(Drop, starknet::Event)]
 enum Event {
@@ -39,6 +50,8 @@ enum Event {
     MinterRemoved: MinterRemoved,
     GuardianAdded: GuardianAdded,
     GuardianRemoved: GuardianRemoved,
+    Paused: Paused,
+    Unpaused: Unpaused,
 }
 
 #[starknet::interface]
@@ -67,6 +80,8 @@ trait IL2TBTC<TContractState> {
         recipient: ContractAddress,
         token_id: u256
     );
+    fn is_paused(ref self: TContractState) -> bool;
+    fn burnFrom(ref self: TContractState, from: ContractAddress, amount: u256);
 }
 
 #[starknet::interface]
@@ -87,9 +102,8 @@ fn test_deployment() {
     
     // Declare and deploy L2TBTC contract
     let contract = declare("L2TBTC").unwrap().contract_class();
-    
     // Directly use string literals as felt252
-    let constructor_args = array![
+    let constructor_args: Array<felt252> = array![
         owner.into()
     ];
     let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
@@ -100,6 +114,7 @@ fn test_deployment() {
     
     // Test contract initialization
     let name = erc20_dispatcher.name();
+    
     let symbol = erc20_dispatcher.symbol();
     let contract_owner = ownable_dispatcher.owner();
     let total_supply = erc20_dispatcher.total_supply();
@@ -1541,3 +1556,1145 @@ fn test_recover_partial_erc20_amount() {
 //     // Verify ownership after recovery
 //     assert(nft_erc721.owner_of(token_id) == recipient, 'NFT not transferred');
 // }
+
+#[test]
+fn test_guardian_can_pause() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    stop_cheat_caller_address(contract_address);
+    
+    // Guardian pauses the contract
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify contract is paused
+    assert(l2tbtc.is_paused(), 'Contract should be paused');
+}
+
+#[test]
+#[should_panic(expected: ('Caller is not a guardian',))]
+fn test_non_guardian_cannot_pause() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let non_guardian = contract_address_const::<'NON_GUARDIAN'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Non-guardian attempts to pause (should fail)
+    start_cheat_caller_address(contract_address, non_guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+fn test_pause_event_emission() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    stop_cheat_caller_address(contract_address);
+    
+    // Setup event spy
+    let mut spy = spy_events();
+    
+    // Guardian pauses the contract
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify Paused event was emitted with correct guardian address
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                Event::Paused(
+                    Paused { account: guardian }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+#[should_panic(expected: ('Pausable: paused',))]
+fn test_cannot_mint_when_paused() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let recipient = contract_address_const::<'RECIPIENT'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian and minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Guardian pauses the contract
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to mint while paused (should fail)
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(recipient, 1000);
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+#[should_panic(expected: ('Pausable: paused',))]
+fn test_cannot_burn_when_paused() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let holder = contract_address_const::<'HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian and minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Mint tokens to holder
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(holder, 1000);
+    stop_cheat_caller_address(contract_address);
+    
+    // Guardian pauses the contract
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to burn while paused (should fail)
+    start_cheat_caller_address(contract_address, holder);
+    l2tbtc.burn(500);
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+#[should_panic(expected: ('Pausable: paused',))]
+fn test_cannot_transfer_when_paused() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let sender = contract_address_const::<'SENDER'>();
+    let recipient = contract_address_const::<'RECIPIENT'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add guardian and minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Mint tokens to sender
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(sender, 1000);
+    stop_cheat_caller_address(contract_address);
+    
+    // Guardian pauses the contract
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt transfer while paused (should fail)
+    start_cheat_caller_address(contract_address, sender);
+    erc20.transfer(recipient, 500);
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+#[should_panic(expected: ('Caller is not the owner',))]
+fn test_unauthorized_unpause() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian and pause the contract
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    stop_cheat_caller_address(contract_address);
+    
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to unpause as unauthorized user (should fail)
+    start_cheat_caller_address(contract_address, third_party);
+    l2tbtc.unpause(); // This should panic
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+#[should_panic(expected: ('Caller is not the owner',))]
+fn test_guardian_cannot_unpause() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian and pause the contract
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    stop_cheat_caller_address(contract_address);
+    
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to unpause as guardian (should fail)
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.unpause(); // This should panic
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+fn test_owner_can_unpause() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add guardian and pause the contract
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    stop_cheat_caller_address(contract_address);
+    
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    assert(l2tbtc.is_paused(), 'Contract should be paused');
+    
+    // Setup event spy
+    let mut spy = spy_events();
+    
+    // Owner unpauses the contract
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.unpause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify contract is unpaused
+    assert(!l2tbtc.is_paused(), 'Contract should be unpaused');
+    
+    // Verify Unpaused event was emitted
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                Event::Unpaused(
+                    Unpaused { account: owner }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+fn test_functionality_after_unpause() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let guardian = contract_address_const::<'GUARDIAN'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let holder = contract_address_const::<'HOLDER'>();
+    let recipient = contract_address_const::<'RECIPIENT'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add guardian and minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addGuardian(guardian);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Pause the contract
+    start_cheat_caller_address(contract_address, guardian);
+    l2tbtc.pause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Owner unpauses the contract
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.unpause();
+    stop_cheat_caller_address(contract_address);
+    
+    // Test minting after unpause
+    let mint_amount: u256 = 1000;
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(holder, mint_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    assert(erc20.balance_of(holder) == mint_amount, 'Mint should succeed');
+    
+    // Test burning after unpause
+    let burn_amount: u256 = 400;
+    start_cheat_caller_address(contract_address, holder);
+    l2tbtc.burn(burn_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    assert(erc20.balance_of(holder) == mint_amount - burn_amount, 'Burn should succeed');
+    
+    // Test transfer after unpause
+    let transfer_amount: u256 = 300;
+    start_cheat_caller_address(contract_address, holder);
+    erc20.transfer(recipient, transfer_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    assert(erc20.balance_of(recipient) == transfer_amount, 'Transfer should succeed');
+}
+
+#[test]
+fn test_multiple_sequential_mints() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let recipient1 = contract_address_const::<'RECIPIENT1'>();
+    let recipient2 = contract_address_const::<'RECIPIENT2'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // First mint to recipient1
+    let amount1: u256 = 1000;
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(recipient1, amount1);
+    
+    // Second mint to recipient1 (same recipient)
+    let amount2: u256 = 500;
+    l2tbtc.mint(recipient1, amount2);
+    
+    // Third mint to recipient2 (different recipient)
+    let amount3: u256 = 750;
+    l2tbtc.mint(recipient2, amount3);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balances
+    assert(erc20.balance_of(recipient1) == amount1 + amount2, 'Wrong recipient1 balance');
+    assert(erc20.balance_of(recipient2) == amount3, 'Wrong recipient2 balance');
+    
+    // Verify total supply
+    assert(erc20.total_supply() == amount1 + amount2 + amount3, 'Wrong total supply');
+}
+
+#[test]
+fn test_mint_zero_tokens() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let recipient = contract_address_const::<'RECIPIENT'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Mint zero tokens
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(recipient, 0);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance and total supply remain zero
+    assert(erc20.balance_of(recipient) == 0, 'Balance should be zero');
+    assert(erc20.total_supply() == 0, 'Supply should be zero');
+}
+
+#[test]
+fn test_mint_to_self() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Minter mints tokens to itself
+    let amount: u256 = 1000;
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(minter, amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance and total supply
+    assert(erc20.balance_of(minter) == amount, 'Wrong minter balance');
+    assert(erc20.total_supply() == amount, 'Wrong total supply');
+}
+
+#[test]
+fn test_mint_large_amounts() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let recipient = contract_address_const::<'RECIPIENT'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Mint a very large amount (close to u256 max but not exceeding it)
+    let large_amount: u256 = 
+        340282366920938463463374607431768211455_u256; // 2^128 - 1, half of u256 max
+    
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(recipient, large_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance and total supply
+    assert(erc20.balance_of(recipient) == large_amount, 'Wrong recipient balance');
+    assert(erc20.total_supply() == large_amount, 'Wrong total supply');
+    
+    // Mint another large amount to test accumulation
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(recipient, large_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify updated balance and total supply
+    assert(erc20.balance_of(recipient) == large_amount * 2, 'Wrong final balance');
+    assert(erc20.total_supply() == large_amount * 2, 'Wrong final supply');
+}
+
+#[test]
+fn test_total_supply_after_multiple_mints() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter (equivalent to addMinter in the original test)
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Mint 1 token to third party (equivalent to mint(thirdParty.address, to1e18(1)))
+    let one_token: u256 = 1000000000000000000; // 1 token with 18 decimals (1e18)
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(third_party, one_token);
+    
+    // Mint 3 tokens to token holder (equivalent to mint(tokenHolder.address, to1e18(3)))
+    let three_tokens: u256 = 3000000000000000000; // 3 tokens with 18 decimals (3e18)
+    l2tbtc.mint(token_holder, three_tokens);
+    stop_cheat_caller_address(contract_address);
+    
+    // Check total supply (should be 4 tokens = 4e18)
+    let expected_total: u256 = 4000000000000000000; // 4 tokens with 18 decimals
+    assert(erc20.total_supply() == expected_total, 'Wrong total supply');
+}
+
+#[test]
+fn test_balance_of() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Mint 7 tokens to token holder (equivalent to 7e18)
+    let balance: u256 = 7000000000000000000; // 7 tokens with 18 decimals
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance
+    assert(erc20.balance_of(token_holder) == balance, 'Wrong token balance');
+}
+
+#[test]
+fn test_transfer() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Initial setup - mint 70 tokens to token holder (70e18)
+    let initial_balance: u256 = 70000000000000000000; // 70 tokens with 18 decimals
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Transfer 5 tokens (5e18) from token holder to third party
+    let transfer_amount: u256 = 5000000000000000000; // 5 tokens with 18 decimals
+    start_cheat_caller_address(contract_address, token_holder);
+    erc20.transfer(third_party, transfer_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balances after transfer
+    assert(
+        erc20.balance_of(token_holder) == initial_balance - transfer_amount,
+        'Wrong sender balance'
+    );
+    assert(
+        erc20.balance_of(third_party) == transfer_amount,
+        'Wrong recipient balance'
+    );
+}
+
+#[test]
+fn test_transfer_event_emission() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Initial setup - mint 70 tokens to token holder
+    let initial_balance: u256 = 70000000000000000000; // 70e18
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Setup event spy
+    let mut spy = spy_events();
+    
+    // Transfer 5 tokens from token holder to third party
+    let transfer_amount: u256 = 5000000000000000000; // 5e18
+    start_cheat_caller_address(contract_address, token_holder);
+    erc20.transfer(third_party, transfer_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify Transfer event was emitted with correct parameters
+    // Note: The exact event structure will depend on your ERC20 implementation
+    // This assumes the standard ERC20 Transfer event structure
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                ERC20Component::Event::Transfer(
+                    ERC20Component::Transfer {
+                        from: token_holder,
+                        to: third_party,
+                        value: transfer_amount
+                    }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+fn test_transfer_from() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    // Initial setup - mint 70 tokens to token holder (70e18)
+    let initial_balance: u256 = 70000000000000000000; // 70 tokens with 18 decimals
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Approve third party to spend tokens
+    let transfer_amount: u256 = 9000000000000000000; // 9 tokens with 18 decimals (9e18)
+    start_cheat_caller_address(contract_address, token_holder);
+    erc20.approve(third_party, transfer_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Setup event spy for transfer
+    let mut spy = spy_events();
+    
+    // Execute transferFrom
+    start_cheat_caller_address(contract_address, third_party);
+    erc20.transfer_from(token_holder, third_party, transfer_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balances after transfer
+    assert(
+        erc20.balance_of(token_holder) == initial_balance - transfer_amount,
+        'Wrong holder balance'
+    );
+    assert(
+        erc20.balance_of(third_party) == transfer_amount,
+        'Wrong recipient balance'
+    );
+    
+    // Verify Transfer event was emitted with correct parameters
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                ERC20Component::Event::Transfer(
+                    ERC20Component::Transfer {
+                        from: token_holder,
+                        to: third_party,
+                        value: transfer_amount
+                    }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+fn test_approve() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Set allowance amount (equivalent to 888e18)
+    let allowance: u256 = 888000000000000000000; // 888 tokens with 18 decimals
+    
+    // Setup event spy
+    let mut spy = spy_events();
+    
+    // Execute approve
+    start_cheat_caller_address(contract_address, token_holder);
+    erc20.approve(third_party, allowance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify allowance amount
+    assert(
+        erc20.allowance(token_holder, third_party) == allowance,
+        'Wrong allowance amount'
+    );
+    
+    // Verify Approval event was emitted with correct parameters
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                ERC20Component::Event::Approval(
+                    ERC20Component::Approval {
+                        owner: token_holder,
+                        spender: third_party,
+                        value: allowance
+                    }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+fn test_burn_event_emission() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let zero_address = contract_address_const::<0>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add minter and mint tokens
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_amount: u256 = 1000000000000000000; // 1 token
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Setup event spy
+    let mut spy = spy_events();
+    
+    // Burn tokens
+    let burn_amount: u256 = 500000000000000000; // 0.5 token
+    start_cheat_caller_address(contract_address, token_holder);
+    l2tbtc.burn(burn_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify Transfer event was emitted (burn is a transfer to zero address)
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                ERC20Component::Event::Transfer(
+                    ERC20Component::Transfer {
+                        from: token_holder,
+                        to: zero_address,
+                        value: burn_amount
+                    }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_burn_insufficient_balance() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add minter and mint tokens
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_amount: u256 = 1000000000000000000; // 1 token
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to burn more than balance
+    let burn_amount: u256 = 2000000000000000000; // 2 tokens
+    start_cheat_caller_address(contract_address, token_holder);
+    l2tbtc.burn(burn_amount); // Should panic with underflow
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+fn test_burn_zero_tokens() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter and mint tokens
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_amount: u256 = 1000000000000000000; // 1 token
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Burn zero tokens
+    start_cheat_caller_address(contract_address, token_holder);
+    l2tbtc.burn(0);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance hasn't changed
+    assert(erc20.balance_of(token_holder) == initial_amount, 'Balance should not change');
+    
+}
+
+#[test]
+#[should_panic]
+fn test_unauthorized_burn_attempt() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let attacker = contract_address_const::<'ATTACKER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add minter and mint tokens to token_holder
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_amount: u256 = 1000000000000000000; // 1 token
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to burn token_holder's tokens from attacker account
+    start_cheat_caller_address(contract_address, attacker);
+    l2tbtc.burn(initial_amount); // Should panic due to insufficient balance
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+fn test_burn_entire_balance() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter and mint tokens
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_amount: u256 = 1000000000000000000; // 1 token
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Burn entire balance
+    start_cheat_caller_address(contract_address, token_holder);
+    l2tbtc.burn(initial_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance is zero
+    assert(erc20.balance_of(token_holder) == 0, 'Balance should be zero');
+    
+    // Verify total supply is zero
+    assert(erc20.total_supply() == 0, 'Supply should be zero');
+}
+
+#[test]
+fn test_burn_from() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    let zero_address = contract_address_const::<0>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter and mint initial tokens (18 tokens)
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_balance: u256 = 18000000000000000000; // 18e18
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Approve third party to burn tokens (9 tokens)
+    let burn_amount: u256 = 9000000000000000000; // 9e18
+    start_cheat_caller_address(contract_address, token_holder);
+    erc20.approve(third_party, burn_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Setup event spy
+    let mut spy = spy_events();
+    
+    // Execute burnFrom
+    start_cheat_caller_address(contract_address, third_party);
+    l2tbtc.burnFrom(token_holder, burn_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify balance was decremented correctly
+    let expected_balance = initial_balance - burn_amount;
+    assert(erc20.balance_of(token_holder) == expected_balance, 'Wrong final balance');
+    
+    // Verify allowance was decremented to zero
+    assert(erc20.allowance(token_holder, third_party) == 0, 'Allowance should be zero');
+    
+    // Verify Transfer event was emitted correctly
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                ERC20Component::Event::Transfer(
+                    ERC20Component::Transfer {
+                        from: token_holder,
+                        to: zero_address,
+                        value: burn_amount
+                    }
+                )
+            )
+        ]
+    );
+}
+
+#[test]
+#[should_panic(expected: ('ERC20: insufficient allowance',))]
+fn test_burn_from_without_approval() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    
+    // Add minter and mint tokens
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_balance: u256 = 18000000000000000000; // 18e18
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to burnFrom without approval
+    let burn_amount: u256 = 9000000000000000000; // 9e18
+    start_cheat_caller_address(contract_address, third_party);
+    l2tbtc.burnFrom(token_holder, burn_amount); // Should panic
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+#[should_panic]
+fn test_burn_from_insufficient_balance() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter and mint small amount of tokens
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_balance: u256 = 5000000000000000000; // 5e18
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(token_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Approve large amount
+    let burn_amount: u256 = 9000000000000000000; // 9e18
+    start_cheat_caller_address(contract_address, token_holder);
+    erc20.approve(third_party, burn_amount);
+    stop_cheat_caller_address(contract_address);
+    
+    // Attempt to burn more than balance
+    start_cheat_caller_address(contract_address, third_party);
+    l2tbtc.burnFrom(token_holder, burn_amount); // Should panic
+    stop_cheat_caller_address(contract_address);
+}
+
+#[test]
+fn test_permit() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let minter = contract_address_const::<'MINTER'>();
+    let third_party = contract_address_const::<'THIRD_PARTY'>();
+    let permitting_holder = contract_address_const::<'PERMITTING_HOLDER'>();
+    
+    // Deploy contract
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
+    let erc20 = ERC20ABIDispatcher { contract_address };
+    
+    // Add minter and mint initial tokens (70 tokens)
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.addMinter(minter);
+    stop_cheat_caller_address(contract_address);
+    
+    let initial_balance: u256 = 70000000000000000000; // 70e18
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.mint(permitting_holder, initial_balance);
+    stop_cheat_caller_address(contract_address);
+
+    // Setup event spy BEFORE the approval
+    let mut spy = spy_events();
+
+    // Do the approve
+    start_cheat_caller_address(contract_address, permitting_holder);
+    erc20.approve(third_party, initial_balance);
+    stop_cheat_caller_address(contract_address);
+    
+    // Verify allowance was set correctly
+    assert(
+        erc20.allowance(permitting_holder, third_party) == initial_balance,
+        'Wrong allowance amount'
+    );
+    
+    // Verify Approval event was emitted
+    // Note: We need to use the correct event type from the ERC20Component
+    spy.assert_emitted(
+        @array![
+            (
+                contract_address,
+                ERC20Component::Event::Approval(
+                    ERC20Component::Approval {
+                        owner: permitting_holder,
+                        spender: third_party,
+                        value: initial_balance
+                    }
+                )
+            )
+        ]
+    );
+}
