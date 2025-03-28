@@ -181,23 +181,6 @@ mod L2TBTC {
         self.ownable.initializer(owner);
     }
 
-    /// @notice Implementation of ERC20 hooks to enforce pausing functionality
-    impl ERC20HooksImpl of ERC20Component::ERC20HooksTrait<ContractState> {
-        /// @notice Hook called before any token transfer
-        /// @param from: ContractAddress - The sender address
-        /// @param recipient: ContractAddress - The recipient address
-        /// @param amount: u256 - The amount of tokens being transferred
-        fn before_update(
-            ref self: ERC20Component::ComponentState<ContractState>,
-            from: ContractAddress,
-            recipient: ContractAddress,
-            amount: u256,
-        ) {
-            let contract_state = self.get_contract();
-            contract_state.pausable.assert_not_paused();
-        }
-    }
-
     /// @notice Internal implementation for role access control
     #[generate_trait]
     impl InternalRolesImpl of InternalRolesTrait {
