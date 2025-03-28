@@ -8,14 +8,14 @@ trait IL2TBTC<TContractState> {
     fn unpause(ref self: TContractState);
     fn burn(ref self: TContractState, value: u256);
     fn mint(ref self: TContractState, recipient: ContractAddress, amount: u256);
-    fn addMinter(ref self: TContractState, minter: ContractAddress);
-    fn removeMinter(ref self: TContractState, minter: ContractAddress);
-    fn addGuardian(ref self: TContractState, guardian: ContractAddress);
-    fn removeGuardian(ref self: TContractState, guardian: ContractAddress);
-    fn getMinters(ref self: TContractState) -> Array<ContractAddress>;
-    fn getGuardians(ref self: TContractState) -> Array<ContractAddress>;
-    fn isMinter(self: @TContractState, account: ContractAddress) -> bool;
-    fn isGuardian(self: @TContractState, account: ContractAddress) -> bool;
+    fn add_minter(ref self: TContractState, minter: ContractAddress);
+    fn remove_minter(ref self: TContractState, minter: ContractAddress);
+    fn add_guardian(ref self: TContractState, guardian: ContractAddress);
+    fn remove_guardian(ref self: TContractState, guardian: ContractAddress);
+    fn get_minters(ref self: TContractState) -> Array<ContractAddress>;
+    fn get_guardians(ref self: TContractState) -> Array<ContractAddress>;
+    fn is_minter(self: @TContractState, account: ContractAddress) -> bool;
+    fn is_guardian(self: @TContractState, account: ContractAddress) -> bool;
 }   
 
 #[starknet::contract]
@@ -64,9 +64,16 @@ mod L2TBTC {
         #[substorage(v0)]
         upgradeable: UpgradeableComponent::Storage,
 
+        /// @notice Indicates if the given address is a minter. Only minters can
+        ///         mint the token.
         isMinter: Map<ContractAddress, bool>,
+        /// @notice List of all minters.
         minters:  Vec<ContractAddress>,
+
+        /// @notice Indicates if the given address is a guardian. Only guardians can
+        ///         pause the contract.
         isGuardian: Map<ContractAddress, bool>,
+        /// @notice List of all guardians.
         guardians: Vec<ContractAddress>,
     }
 
@@ -150,8 +157,13 @@ mod L2TBTC {
     #[abi(per_item)]
     impl ExternalImpl of ExternalTrait {
 
+        /// @notice Adds the address to the minters list.
+        /// @dev Requirements:
+        ///      - The caller must be the contract owner.
+        ///      - `minter` must not be a minter address already.
+        /// @param minter The address to be added as a minter.
         #[external(v0)]
-        fn addMinter(ref self: ContractState, minter: ContractAddress) {
+        fn add_minter(ref self: ContractState, minter: ContractAddress) {
             self.ownable.assert_only_owner();
             assert(!InternalRolesImpl::is_minter(@self, minter), ALREADY_MINTER);
             self.isMinter.entry(minter).write(true);
@@ -159,8 +171,13 @@ mod L2TBTC {
             self.emit(MinterAdded { minter });
         }
 
+        /// @notice Removes the address from the minters list.
+        /// @dev Requirements:
+        ///      - The caller must be the contract owner.
+        ///      - `minter` must be a minter address.
+        /// @param minter The address to be removed from the minters list.
         #[external(v0)]
-        fn removeMinter(ref self: ContractState, minter: ContractAddress) {
+        fn remove_minter(ref self: ContractState, minter: ContractAddress) {
             self.ownable.assert_only_owner();
             assert(InternalRolesImpl::is_minter(@self, minter), NOT_MINTER);
 
@@ -182,8 +199,13 @@ mod L2TBTC {
             self.emit(MinterRemoved { minter });
         }
 
+        /// @notice Adds the address to the guardians list.
+        /// @dev Requirements:
+        ///      - The caller must be the contract owner.
+        ///      - `guardian` must not be a guardian address already.
+        /// @param guardian The address to be added as a guardian.
         #[external(v0)]
-        fn addGuardian(ref self: ContractState, guardian: ContractAddress) {
+        fn add_guardian(ref self: ContractState, guardian: ContractAddress) {
             self.ownable.assert_only_owner();
             assert(!self.isGuardian.entry(guardian).read(), ALREADY_GUARDIAN);
             self.isGuardian.entry(guardian).write(true);
@@ -191,8 +213,13 @@ mod L2TBTC {
             self.emit(GuardianAdded { guardian });
         }
 
+        /// @notice Removes the address from the guardians list.
+        /// @dev Requirements:
+        ///      - The caller must be the contract owner.
+        ///      - `guardian` must be a guardian address.
+        /// @param guardian The address to be removed from the guardians list.
         #[external(v0)]
-        fn removeGuardian(ref self: ContractState, guardian: ContractAddress) {
+        fn remove_guardian(ref self: ContractState, guardian: ContractAddress) {
             self.ownable.assert_only_owner();
             assert(InternalRolesImpl::is_guardian(@self, guardian), NOT_GUARDIAN);
             self.isGuardian.entry(guardian).write(false);
@@ -218,7 +245,7 @@ mod L2TBTC {
         /// @param recipient The token recipient address that will receive recovered tokens
         /// @param amount The amount to be recovered
         #[external(v0)]
-        fn recoverERC20(
+        fn recover_ERC20(
             ref self: ContractState,
             token: ContractAddress,
             recipient: ContractAddress,
@@ -236,7 +263,7 @@ mod L2TBTC {
         /// @param token_id The ID of the ERC721 token to be recovered
         /// @param data Additional data to be passed to the safe transfer
         #[external(v0)]
-        fn recoverERC721(
+        fn recover_ERC721(
             ref self: ContractState,
             token: ContractAddress,
             recipient: ContractAddress,
@@ -248,6 +275,12 @@ mod L2TBTC {
             erc721.safe_transfer_from(get_caller_address(), recipient, token_id, data.span());
         }
 
+        /// @notice Allows one of the guardians to pause mints and burns allowing
+        ///         avoidance of contagion in case of a chain- or bridge-specific
+        ///         incident.
+        /// @dev Requirements:
+        ///      - The caller must be a guardian.
+        ///      - The contract must not be already paused.
         #[external(v0)]
         fn pause(ref self: ContractState) {
             let caller = get_caller_address();
@@ -278,7 +311,7 @@ mod L2TBTC {
         }
 
         #[external(v0)]
-        fn burnFrom(ref self: ContractState, account: ContractAddress, value: u256) {
+        fn burn_from(ref self: ContractState, account: ContractAddress, value: u256) {
             self.pausable.assert_not_paused();
             let caller = get_caller_address();
             // Spend allowance
@@ -288,7 +321,7 @@ mod L2TBTC {
         }
 
         #[external(v0)]
-        fn getMinters(self: @ContractState) -> Array<ContractAddress> {
+        fn get_minters(self: @ContractState) -> Array<ContractAddress> {
             let mut minters_array = array![];
             for i in 0..self.minters.len() {
                 minters_array.append(self.minters.at(i).read());
@@ -297,7 +330,7 @@ mod L2TBTC {
         }
 
         #[external(v0)]
-        fn getGuardians(self: @ContractState) -> Array<ContractAddress> {
+        fn get_guardians(self: @ContractState) -> Array<ContractAddress> {
             let mut guardians_array = array![];
             for i in 0..self.guardians.len() {
                 guardians_array.append(self.guardians.at(i).read());
@@ -306,12 +339,12 @@ mod L2TBTC {
         }
 
         #[external(v0)]
-        fn isMinter(self: @ContractState, account: ContractAddress) -> bool {
+        fn is_minter(self: @ContractState, account: ContractAddress) -> bool {
             InternalRolesImpl::is_minter(self, account)
         }
 
         #[external(v0)]
-        fn isGuardian(self: @ContractState, account: ContractAddress) -> bool {
+        fn is_guardian(self: @ContractState, account: ContractAddress) -> bool {
             InternalRolesImpl::is_guardian(self, account)
         }
     }

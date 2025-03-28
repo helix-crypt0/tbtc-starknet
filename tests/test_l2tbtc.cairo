@@ -1516,46 +1516,46 @@ fn test_recover_partial_erc20_amount() {
     assert(token_erc20.balance_of(recipient) == partial_amount, 'Wrong recipient balance');
 }
 
-// #[test]
-// fn test_owner_recover_erc721() {
-//     // Setup
-//     let owner = contract_address_const::<'OWNER'>();
-//     let recipient = contract_address_const::<'RECIPIENT'>();
+#[test]
+fn test_owner_recover_erc721() {
+    // Setup
+    let owner = contract_address_const::<'OWNER'>();
+    let recipient = contract_address_const::<'RECIPIENT'>();
     
-//     // Deploy main contract (L2TBTC)
-//     let contract = declare("L2TBTC").unwrap().contract_class();
-//     let constructor_args = array![owner.into()];
-//     let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
-//     let l2tbtc = IL2TBTCDispatcher { contract_address };
+    // Deploy main contract (L2TBTC)
+    let contract = declare("L2TBTC").unwrap().contract_class();
+    let constructor_args = array![owner.into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
+    let l2tbtc = IL2TBTCDispatcher { contract_address };
     
-//     // Deploy a TestERC721 as the NFT to recover
-//     // The constructor for ERC721 typically needs name, symbol, and owner
-//     let token_contract = declare("TestERC721").unwrap().contract_class();
-//     // Specify the array type as Array<felt252> so the compiler knows how to infer it:
+    // Deploy a TestERC721 as the NFT to recover
+    // The constructor for ERC721 typically needs name, symbol, and owner
+    let token_contract = declare("TestERC721").unwrap().contract_class();
+    // Specify the array type as Array<felt252> so the compiler knows how to infer it:
     
-//     let (token_address, _) = token_contract.deploy(@token_constructor_args).unwrap();
+    let (token_address, _) = token_contract.deploy(@token_constructor_args).unwrap();
     
-//     // Create dispatchers for the token contract
-//     let test_nft = ITestERC721Dispatcher { contract_address: token_address };
-//     let nft_erc721 = ERC721ABIDispatcher { contract_address: token_address };
+    // Create dispatchers for the token contract
+    let test_nft = ITestERC721Dispatcher { contract_address: token_address };
+    let nft_erc721 = ERC721ABIDispatcher { contract_address: token_address };
     
-//     // Mint an NFT to the L2TBTC contract
-//     let token_id: u256 = 1;
-//     start_cheat_caller_address(token_address, owner);
-//     test_nft.mint(contract_address, token_id);
-//     stop_cheat_caller_address(token_address);
+    // Mint an NFT to the L2TBTC contract
+    let token_id: u256 = 1;
+    start_cheat_caller_address(token_address, owner);
+    test_nft.mint(contract_address, token_id);
+    stop_cheat_caller_address(token_address);
     
-//     // Verify initial ownership
-//     assert(nft_erc721.owner_of(token_id) == contract_address, 'Wrong initial owner');
+    // Verify initial ownership
+    assert(nft_erc721.owner_of(token_id) == contract_address, 'Wrong initial owner');
     
-//     // Recover NFT as owner
-//     start_cheat_caller_address(contract_address, owner);
-//     l2tbtc.recoverERC721(token_address, recipient, token_id);
-//     stop_cheat_caller_address(contract_address);
+    // Recover NFT as owner
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.recoverERC721(token_address, recipient, token_id);
+    stop_cheat_caller_address(contract_address);
     
-//     // Verify ownership after recovery
-//     assert(nft_erc721.owner_of(token_id) == recipient, 'NFT not transferred');
-// }
+    // Verify ownership after recovery
+    assert(nft_erc721.owner_of(token_id) == recipient, 'NFT not transferred');
+}
 
 #[test]
 fn test_guardian_can_pause() {
