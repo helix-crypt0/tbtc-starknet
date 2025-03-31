@@ -61,11 +61,17 @@ mod L2TBTC {
     use starknet::event::EventEmitter;
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::security::pausable::PausableComponent;
-    use openzeppelin::token::erc20::ERC20Component;
-    use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
-    use openzeppelin::token::erc721::interface::{ERC721ABIDispatcher, ERC721ABIDispatcherTrait};
     use openzeppelin::upgrades::interface::IUpgradeable;
     use openzeppelin::upgrades::UpgradeableComponent;
+    use openzeppelin::utils::cryptography::nonces::NoncesComponent;
+
+    use openzeppelin::utils::snip12::{SNIP12Metadata, SNIP12HashSpanImpl};
+
+
+    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
+    use openzeppelin::token::erc20::interface::{ERC20ABIDispatcher, ERC20ABIDispatcherTrait};
+    use openzeppelin::token::erc721::interface::{ERC721ABIDispatcher, ERC721ABIDispatcherTrait};
+    
     use starknet::{ClassHash, ContractAddress, get_caller_address};
     use starknet::storage::{
         StoragePointerReadAccess, StoragePointerWriteAccess, StoragePathEntry, Map,
@@ -76,6 +82,7 @@ mod L2TBTC {
     component!(path: PausableComponent, storage: pausable, event: PausableEvent);
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
+    component!(path: NoncesComponent, storage: nonces, event: NoncesEvent);
 
     // External
     #[abi(embed_v0)]
@@ -84,12 +91,26 @@ mod L2TBTC {
     impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
     #[abi(embed_v0)]
     impl OwnableMixinImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl ERC20PermitImpl = ERC20Component::ERC20PermitImpl<ContractState>;
+    
+    impl SNIP12MetadataImpl of SNIP12Metadata {
+        fn name() -> felt252 {
+            let state = unsafe_new_contract_state();
+    
+            // Some logic to get the name from storage
+            state.erc20.name().at(0).unwrap().into()
+        }
+    
+        fn version() -> felt252 { 'v1' }
+    }
 
     // Internal
     impl ERC20InternalImpl = ERC20Component::InternalImpl<ContractState>;
     impl PausableInternalImpl = PausableComponent::InternalImpl<ContractState>;
     impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
     impl UpgradeableInternalImpl = UpgradeableComponent::InternalImpl<ContractState>;
+    impl NoncesInternalImpl = NoncesComponent::InternalImpl<ContractState>;
 
     #[storage]
     struct Storage {
@@ -101,16 +122,18 @@ mod L2TBTC {
         ownable: OwnableComponent::Storage,
         #[substorage(v0)]
         upgradeable: UpgradeableComponent::Storage,
+        #[substorage(v0)]
+        nonces: NoncesComponent::Storage,
 
         /// @notice Indicates if the given address is a minter. Only minters can
         ///         mint the token.
-        isMinter: Map<ContractAddress, bool>,
+        is_minter_map: Map<ContractAddress, bool>,
         /// @notice List of all minters.
         minters:  Vec<ContractAddress>,
 
         /// @notice Indicates if the given address is a guardian. Only guardians can
         ///         pause the contract.
-        isGuardian: Map<ContractAddress, bool>,
+        is_guardian_map: Map<ContractAddress, bool>,
         /// @notice List of all guardians.
         guardians: Vec<ContractAddress>,
     }
@@ -166,6 +189,8 @@ mod L2TBTC {
         OwnableEvent: OwnableComponent::Event,
         #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,
+        #[flat]
+        NoncesEvent: NoncesComponent::Event,
 
         MinterAdded: MinterAdded,
         MinterRemoved: MinterRemoved,
@@ -188,14 +213,14 @@ mod L2TBTC {
         /// @param caller: ContractAddress - The address to check
         /// @return bool - True if the caller is a minter, false otherwise
         fn is_minter(self: @ContractState, caller: ContractAddress) -> bool {
-            self.isMinter.entry(caller).read()
+            self.is_minter_map.entry(caller).read()
         }
 
         /// @notice Check if an address is a guardian
         /// @param caller: ContractAddress - The address to check
         /// @return bool - True if the caller is a guardian, false otherwise
         fn is_guardian(self: @ContractState, caller: ContractAddress) -> bool {
-            self.isGuardian.entry(caller).read()
+            self.is_guardian_map.entry(caller).read()
         }
     }
     
@@ -209,7 +234,7 @@ mod L2TBTC {
         fn add_minter(ref self: ContractState, minter: ContractAddress) {
             self.ownable.assert_only_owner();
             assert(!InternalRolesImpl::is_minter(@self, minter), ALREADY_MINTER);
-            self.isMinter.entry(minter).write(true);
+            self.is_minter_map.entry(minter).write(true);
             self.minters.push(minter);
             self.emit(MinterAdded { minter });
         }
@@ -222,7 +247,7 @@ mod L2TBTC {
             self.ownable.assert_only_owner();
             assert(InternalRolesImpl::is_minter(@self, minter), NOT_MINTER);
 
-            self.isMinter.entry(minter).write(false);
+            self.is_minter_map.entry(minter).write(false);
     
             let minters_len = self.minters.len();
             for i in 0..minters_len {
@@ -246,8 +271,8 @@ mod L2TBTC {
         #[external(v0)]
         fn add_guardian(ref self: ContractState, guardian: ContractAddress) {
             self.ownable.assert_only_owner();
-            assert(!self.isGuardian.entry(guardian).read(), ALREADY_GUARDIAN);
-            self.isGuardian.entry(guardian).write(true);
+            assert(!self.is_guardian_map.entry(guardian).read(), ALREADY_GUARDIAN);
+            self.is_guardian_map.entry(guardian).write(true);
             self.guardians.push(guardian);
             self.emit(GuardianAdded { guardian });
         }
@@ -259,7 +284,7 @@ mod L2TBTC {
         fn remove_guardian(ref self: ContractState, guardian: ContractAddress) {
             self.ownable.assert_only_owner();
             assert(InternalRolesImpl::is_guardian(@self, guardian), NOT_GUARDIAN);
-            self.isGuardian.entry(guardian).write(false);
+            self.is_guardian_map.entry(guardian).write(false);
 
             let guardians_len = self.guardians.len();
             for i in 0..guardians_len {

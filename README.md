@@ -86,8 +86,54 @@ You should see output similar to the following
 
 ```
 ## Interacting with the contract
-You can now interact with the contract functions that have been deployed
+You can now interact with the contract functions that have been deployed.
+
+
 # Deploying to a Testnet
+We use sncast to deploy to the testnet. The first step is creating and deploying an account on testnet.
+```
+sncast \
+    account create \
+    --network sepolia \
+    --name new_account
+```
+You'll need to pre-fund the account from the testnet faucet [here](https://starknet-faucet.vercel.app)
+Then deploy it.
+```
+sncast \
+    account deploy \
+    --network sepolia \
+    --name new_account
+```
+
+Then declare the contract using the contract-name defined in the Scarb.toml
+```
+sncast --account helix_deployer \
+> declare \
+> --network sepolia \
+> --contract-name L2TBTC
+```
+You'll get output like the following:
+```
+command: declare
+class_hash: 0x058a00954ba797167ab3643ae7347485b2808ce9d8fd196ea90cf10749602fa7
+transaction_hash: 0x056ce22477b3c8bf9e19d03acb22c9780489518eeeba93885c52042db1410cfd
+
+To see declaration details, visit:
+class: https://sepolia.starkscan.co/class/0x058a00954ba797167ab3643ae7347485b2808ce9d8fd196ea90cf10749602fa7
+transaction: https://sepolia.starkscan.co/tx/0x056ce22477b3c8bf9e19d03acb22c9780489518eeeba93885c52042db1410cfd
+```
+
+Then deploy the contract:
+```
+sncast --account helix_deployer \
+deploy \
+--network sepolia \
+--class-hash 0x058a00954ba797167ab3643ae7347485b2808ce9d8fd196ea90cf10749602fa7 \
+> -c 0x6bbfd67ee276497aa65e153a65e7cc89e9509e82dfc6280f565e5fc025e92b2
+```
+
+Where class-hash is the class hash of the contract declared, and -c is the address for the owner of the contract
 
 # Troubleshooting
 You may run into issues with incompatible Sierra versions. In this case you need to install a specific version
