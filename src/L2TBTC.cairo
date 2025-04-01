@@ -336,7 +336,7 @@ mod L2TBTC {
             erc721.safe_transfer_from(get_caller_address(), recipient, token_id, data.span());
         }
 
-        /// @notice Pauses all token transfers, mints, and burns
+        /// @notice Pauses all token mints and burns
         /// @dev Only guardians can pause the contract
         #[external(v0)]
         fn pause(ref self: ContractState) {
@@ -345,7 +345,7 @@ mod L2TBTC {
             self.pausable.pause();
         }
 
-        /// @notice Unpauses the contract, allowing transfers, mints, and burns
+        /// @notice Unpauses the contract mints and burns
         /// @dev Only the contract owner can unpause the contract
         #[external(v0)]
         fn unpause(ref self: ContractState) {
