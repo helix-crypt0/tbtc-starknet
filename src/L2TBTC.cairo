@@ -96,13 +96,10 @@ mod L2TBTC {
     
     impl SNIP12MetadataImpl of SNIP12Metadata {
         fn name() -> felt252 {
-            let state = unsafe_new_contract_state();
-    
-            // Some logic to get the name from storage
-            state.erc20.name().at(0).unwrap().into()
+            'Starknet tBTC'
         }
     
-        fn version() -> felt252 { 'v1' }
+        fn version() -> felt252 { '1.0.0' }
     }
 
     // Internal
