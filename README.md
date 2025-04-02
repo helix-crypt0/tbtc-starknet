@@ -109,9 +109,9 @@ sncast \
 Then declare the contract using the contract-name defined in the Scarb.toml
 ```
 sncast --account helix_deployer \
-> declare \
-> --network sepolia \
-> --contract-name L2TBTC
+declare \
+--network sepolia \
+--contract-name L2TBTC
 ```
 You'll get output like the following:
 ```

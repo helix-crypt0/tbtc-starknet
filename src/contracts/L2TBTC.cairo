@@ -5,7 +5,7 @@ use starknet::ContractAddress;
 /// @notice Interface for the L2TBTC contract defining all external functions
 /// @dev Contains functions for pausing, burning, minting, and role management
 #[starknet::interface]
-trait IL2TBTC<TContractState> {
+pub trait IL2TBTC<TContractState> {
     /// @notice Pause the contract operations
     fn pause(ref self: TContractState);
     
@@ -15,6 +15,11 @@ trait IL2TBTC<TContractState> {
     /// @notice Burn tokens from the caller's balance
     /// @param value: u256 - The amount of tokens to burn
     fn burn(ref self: TContractState, value: u256);
+
+    /// @notice Burn tokens from an account, using the caller's allowance
+    /// @param account: ContractAddress - The address whose tokens will be burned
+    /// @param value: u256 - The amount of tokens to burn
+    fn burn_from(ref self: TContractState, account: ContractAddress, value: u256);
     
     /// @notice Mint new tokens to a recipient
     /// @param recipient: ContractAddress - The address receiving the minted tokens
@@ -54,10 +59,30 @@ trait IL2TBTC<TContractState> {
     /// @param account: ContractAddress - The address to check
     /// @return bool - True if the account is a guardian, false otherwise
     fn is_guardian(self: @TContractState, account: ContractAddress) -> bool;
-}   
+
+    /// @notice Check if the contract is paused
+    /// @return bool - True if the contract is paused, false otherwise
+    fn is_paused(self: @TContractState) -> bool;
+
+    /// @notice Recovers ERC20 tokens accidentally sent to this contract
+    /// @dev Only the contract owner can recover tokens
+    /// @param token: ContractAddress - The address of the ERC20 token to recover
+    /// @param recipient: ContractAddress - The address that will receive the recovered tokens
+    /// @param amount: u256 - The amount of tokens to recover
+    fn recover_ERC20(ref self: TContractState, token: ContractAddress, recipient: ContractAddress, amount: u256);
+
+    /// @notice Recovers ERC721 tokens accidentally sent to this contract
+    /// @dev Only the contract owner can recover tokens
+    /// @param token: ContractAddress - The address of the ERC721 token to recover
+    /// @param recipient: ContractAddress - The address that will receive the recovered token
+    /// @param token_id: u256 - The ID of the ERC721 token to recover
+    /// @param data: Array<felt252> - Additional data to pass to the safe transfer function
+    fn recover_ERC721(ref self: TContractState, token: ContractAddress, recipient: ContractAddress, token_id: u256, data: Array<felt252>);
+    
+}  
 
 #[starknet::contract]
-mod L2TBTC {
+pub mod L2TBTC {
     use starknet::event::EventEmitter;
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::security::pausable::PausableComponent;
@@ -149,35 +174,35 @@ mod L2TBTC {
     /// @notice Event emitted when a new minter is added
     /// @param minter: ContractAddress - The address added as a minter
     #[derive(Drop, starknet::Event)]
-    struct MinterAdded {
-        minter: ContractAddress,
+    pub struct MinterAdded {
+        pub minter: ContractAddress,
     }
 
     /// @notice Event emitted when a minter is removed
     /// @param minter: ContractAddress - The address removed from minters
     #[derive(Drop, starknet::Event)]
-    struct MinterRemoved {
-        minter: ContractAddress,
+    pub struct MinterRemoved {
+        pub minter: ContractAddress,
     }
 
     /// @notice Event emitted when a new guardian is added
     /// @param guardian: ContractAddress - The address added as a guardian
     #[derive(Drop, starknet::Event)]
-    struct GuardianAdded {
-        guardian: ContractAddress,
+    pub struct GuardianAdded {
+        pub guardian: ContractAddress,
     }
 
     /// @notice Event emitted when a guardian is removed
     /// @param guardian: ContractAddress - The address removed from guardians
     #[derive(Drop, starknet::Event)]
-    struct GuardianRemoved {
-        guardian: ContractAddress,
+    pub struct GuardianRemoved {
+        pub guardian: ContractAddress,
     }
 
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {
+    pub enum Event {
         #[flat]
         ERC20Event: ERC20Component::Event,
         #[flat]
@@ -332,8 +357,14 @@ mod L2TBTC {
             data: Array<felt252>
         ) {
             self.ownable.assert_only_owner();
+            
+            // Get the ERC721 contract reference
             let erc721 = ERC721ABIDispatcher { contract_address: token };
-            erc721.safe_transfer_from(get_caller_address(), recipient, token_id, data.span());
+            
+            // Use the L2TBTC contract's own address instead of `get_caller_address()`
+            let contract_addr = starknet::get_contract_address();
+            
+            erc721.safe_transfer_from(contract_addr, recipient, token_id, data.span());
         }
 
         /// @notice Pauses all token mints and burns
