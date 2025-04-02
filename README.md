@@ -133,7 +133,17 @@ deploy \
 > -c 0x6bbfd67ee276497aa65e153a65e7cc89e9509e82dfc6280f565e5fc025e92b2
 ```
 
-Where class-hash is the class hash of the contract declared, and -c is the address for the owner of the contract
+Where class-hash is the class hash of the contract declared, and -c is the address for the owner of the contract.
+
+Finally verify the contract with Walnut after the deployment state is successful:
+```
+sncast \
+    verify \
+    --contract-address [address from deploy] \
+    --contract-name L2TBTC \
+    --verifier walnut \
+    --network sepolia
+```
 
 # Troubleshooting
 You may run into issues with incompatible Sierra versions. In this case you need to install a specific version

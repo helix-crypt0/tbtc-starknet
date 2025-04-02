@@ -167,7 +167,7 @@ fn test_unauthorized_mint() {
     // Try to mint tokens as unauthorized user (should fail)
     let mint_amount: u256 = 1000;
     start_cheat_caller_address(contract_address, user2);
-    l2tbtc.mint(user1, mint_amount); // This should panic with 'not owner or minter'
+    l2tbtc.mint(user1, mint_amount);
     stop_cheat_caller_address(contract_address);
 }
 
@@ -230,7 +230,7 @@ fn test_add_minter() {
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected: ('Already a minter',))]
 fn test_add_duplicate_minter() {
     // Setup
     let (_, l2tbtc, contract_address, owner) = setup();
@@ -241,7 +241,7 @@ fn test_add_duplicate_minter() {
     l2tbtc.add_minter(user1);
     
     // Try to add the same user as minter again (should fail)
-    l2tbtc.add_minter(user1); // This should panic with 'Already a minter'
+    l2tbtc.add_minter(user1);
     stop_cheat_caller_address(contract_address);
 }
 
@@ -1264,7 +1264,6 @@ fn test_owner_recover_erc721() {
 
     // Confirm that the initial (constructor) owner of token #1 is RECIPIENT
     assert(erc721.owner_of(token_id) == nft_owner, 'Owner should be RECIPIENT');
-    println!("here");
     // 3. Transfer token #1 from RECIPIENT to L2TBTC contract
     //    This simulates an NFT accidentally sent to the L2TBTC contract
     start_cheat_caller_address(erc721_contract, nft_owner);
@@ -1272,12 +1271,8 @@ fn test_owner_recover_erc721() {
     erc721.safe_transfer_from(nft_owner, contract_address, token_id, array![].span());
     stop_cheat_caller_address(erc721_contract);
 
-    println!("here2");
-
     // Confirm that L2TBTC contract now owns token #1
     assert(erc721.owner_of(token_id) == contract_address, 'NFT should be owned by L2TBTC');
-
-    println!("here3");
 
     // 4. Have the owner of L2TBTC recover the NFT to new_recipient
     start_cheat_caller_address(contract_address, owner);
