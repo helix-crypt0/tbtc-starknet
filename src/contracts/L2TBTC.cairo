@@ -168,8 +168,6 @@ pub mod L2TBTC {
     const NOT_GUARDIAN: felt252 = 'Not a guardian';
     /// @notice Error message when an address is already a guardian
     const ALREADY_GUARDIAN: felt252 = 'Already a guardian';
-    /// @notice Error message when the caller is not the owner
-    const NOT_OWNER: felt252 = 'Not owner';
 
     /// @notice Event emitted when a new minter is added
     /// @param minter: ContractAddress - The address added as a minter
@@ -199,6 +197,29 @@ pub mod L2TBTC {
         pub guardian: ContractAddress,
     }
 
+    /// @notice Event emitted when ERC20 tokens are recovered from the contract
+    /// @param token: ContractAddress - The address of the recovered ERC20 token
+    /// @param recipient: ContractAddress - The address that received the tokens
+    /// @param amount: u256 - The amount of tokens recovered
+    #[derive(Drop, starknet::Event)]
+    pub struct ERC20Recovered {
+        pub token: ContractAddress,
+        pub recipient: ContractAddress,
+        pub amount: u256,
+    }
+
+    /// @notice Event emitted when ERC721 tokens are recovered from the contract
+    /// @param token: ContractAddress - The address of the recovered ERC721 token
+    /// @param recipient: ContractAddress - The address that received the token
+    /// @param token_id: u256 - The ID of the recovered token
+    #[derive(Drop, starknet::Event)]
+    pub struct ERC721Recovered {
+        pub token: ContractAddress,
+        pub recipient: ContractAddress,
+        pub token_id: u256,
+    }
+    
+        
 
     #[event]
     #[derive(Drop, starknet::Event)]
@@ -218,6 +239,8 @@ pub mod L2TBTC {
         MinterRemoved: MinterRemoved,
         GuardianAdded: GuardianAdded,
         GuardianRemoved: GuardianRemoved,
+        ERC20Recovered: ERC20Recovered,
+        ERC721Recovered: ERC721Recovered,
     }
     
     /// @notice Constructor function to initialize the contract
@@ -340,6 +363,7 @@ pub mod L2TBTC {
             let erc20 = ERC20ABIDispatcher { contract_address: token };
             let success = erc20.transfer(recipient, amount);
             assert(success, 'ERC20 transfer failed');
+            self.emit(ERC20Recovered { token, recipient, amount });
         }
 
         /// @notice Recovers ERC721 tokens accidentally sent to this contract
@@ -365,6 +389,7 @@ pub mod L2TBTC {
             let contract_addr = starknet::get_contract_address();
             
             erc721.safe_transfer_from(contract_addr, recipient, token_id, data.span());
+            self.emit(ERC721Recovered { token, recipient, token_id });
         }
 
         /// @notice Pauses all token mints and burns
