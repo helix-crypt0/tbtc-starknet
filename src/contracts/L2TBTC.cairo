@@ -25,7 +25,7 @@ pub trait IL2TBTC<TContractState> {
     /// @notice Mint tokens to a recipient
     /// @param recipient: ContractAddress - The address receiving the minted tokens
     /// @param amount: u256 - The amount of tokens to mint
-    fn mint(ref self: TContractState, recipient: ContractAddress, amount: u256);
+    fn permissioned_mint(ref self: TContractState, recipient: ContractAddress, amount: u256);
 
     /// @notice Burn tokens from an account, using the caller's allowance
     /// @param account: ContractAddress - The address whose tokens will be burned
@@ -435,7 +435,7 @@ pub mod L2TBTC {
         /// @param recipient: ContractAddress - The address receiving the minted tokens
         /// @param amount: u256 - The amount of tokens to mint
         #[external(v0)]
-        fn mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
+        fn permissioned_mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
             self.pausable.assert_not_paused();
 
             let caller = get_caller_address();
