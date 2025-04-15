@@ -2196,3 +2196,28 @@ fn test_permissioned_burn() {
     );
 }
 
+#[test]
+#[should_panic(expected: ('Not a minter',))]
+fn test_unauthorized_permissioned_burn() {
+    // Setup
+    let (_, l2tbtc, contract_address, owner) = setup();
+    let minter = contract_address_const::<'MINTER'>();
+    let token_holder = contract_address_const::<'TOKEN_HOLDER'>();
+    let unauthorized = contract_address_const::<'UNAUTHORIZED'>();
+
+    // Add minter
+    start_cheat_caller_address(contract_address, owner);
+    l2tbtc.add_minter(minter);
+    stop_cheat_caller_address(contract_address);
+
+    // Mint initial tokens to token_holder
+    let initial_amount: u256 = 1000;
+    start_cheat_caller_address(contract_address, minter);
+    l2tbtc.permissioned_mint(token_holder, initial_amount);
+    stop_cheat_caller_address(contract_address);
+
+    // Attempt permissioned burn from unauthorized account (should fail)
+    start_cheat_caller_address(contract_address, unauthorized);
+    l2tbtc.permissioned_burn(token_holder, 500);
+    stop_cheat_caller_address(contract_address);
+}

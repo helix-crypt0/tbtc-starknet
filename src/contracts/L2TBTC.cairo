@@ -267,7 +267,9 @@ pub mod L2TBTC {
         self.ownable.initializer(owner);
         
         // Add initial minter
-        self.add_minter(initial_minter);
+        self.is_minter_map.entry(initial_minter).write(true);
+        self.minters.push(initial_minter);
+        self.emit(MinterAdded { minter: initial_minter });
     }
 
     /// @notice Internal implementation for role access control
