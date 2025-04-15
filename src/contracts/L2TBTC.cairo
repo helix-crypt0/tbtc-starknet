@@ -14,17 +14,23 @@ pub trait IL2TBTC<TContractState> {
     
     /// @notice Burn tokens from the caller's balance
     /// @param value: u256 - The amount of tokens to burn
-    fn permissioned_burn(ref self: TContractState, value: u256);
+    fn burn(ref self: TContractState, value: u256);
+
+    /// @notice Burn tokens from an account, using the caller's allowance
+    /// @dev Only minters can burn tokens
+    /// @param account: ContractAddress - The address whose tokens will be burned
+    /// @param value: u256 - The amount of tokens to burn
+    fn permissioned_burn(ref self: TContractState, account: ContractAddress, value: u256);
+
+    /// @notice Mint tokens to a recipient
+    /// @param recipient: ContractAddress - The address receiving the minted tokens
+    /// @param amount: u256 - The amount of tokens to mint
+    fn mint(ref self: TContractState, recipient: ContractAddress, amount: u256);
 
     /// @notice Burn tokens from an account, using the caller's allowance
     /// @param account: ContractAddress - The address whose tokens will be burned
     /// @param value: u256 - The amount of tokens to burn
     fn burn_from(ref self: TContractState, account: ContractAddress, value: u256);
-    
-    /// @notice Mint new tokens to a recipient
-    /// @param recipient: ContractAddress - The address receiving the minted tokens
-    /// @param amount: u256 - The amount of tokens to mint
-    fn permissioned_mint(ref self: TContractState, recipient: ContractAddress, amount: u256);
     
     /// @notice Add a new address to the minters list
     /// @param minter: ContractAddress - The address to add as a minter
@@ -253,12 +259,17 @@ pub mod L2TBTC {
         _decimals_ignore: u8,
         _initial_supply_ignore: u256,
         _initial_recipient_ignore: ContractAddress,
-        _initial_minter_ignore: ContractAddress,
+        initial_minter: ContractAddress,
         owner: ContractAddress,
         _upgrade_delay_ignore: u64,
     ) {
         self.erc20.initializer("Starknet tBTC", "tBTC");
         self.ownable.initializer(owner);
+        
+        // Add initial minter
+        self.is_minter_map.entry(initial_minter).write(true);
+        self.minters.push(initial_minter);
+        self.emit(MinterAdded { minter: initial_minter });
     }
 
     /// @notice Internal implementation for role access control
@@ -424,7 +435,7 @@ pub mod L2TBTC {
         /// @param recipient: ContractAddress - The address receiving the minted tokens
         /// @param amount: u256 - The amount of tokens to mint
         #[external(v0)]
-        fn permissioned_mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
+        fn mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
             self.pausable.assert_not_paused();
 
             let caller = get_caller_address();
@@ -437,9 +448,17 @@ pub mod L2TBTC {
         /// @dev Contract must not be paused
         /// @param value: u256 - The amount of tokens to burn
         #[external(v0)]
-        fn permissioned_burn(ref self: ContractState, value: u256) {
+        fn burn(ref self: ContractState, value: u256) {
             self.pausable.assert_not_paused();
             self.erc20.burn(get_caller_address(), value);
+        }
+
+        #[external(v0)]
+        fn permissioned_burn(ref self: ContractState, account: ContractAddress, value: u256) {
+            self.pausable.assert_not_paused();
+            let caller = get_caller_address();
+            assert(InternalRolesImpl::is_minter(@self, caller), NOT_MINTER);
+            self.erc20.burn(account, value);
         }
 
         /// @notice Burns tokens from an account, using the caller's allowance

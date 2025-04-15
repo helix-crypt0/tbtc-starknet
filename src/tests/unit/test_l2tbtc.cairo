@@ -28,14 +28,14 @@ fn token_deploy_args(
     let _decimals_ignore: u8 = 0;
     let _initial_supply_ignore: u256 = 0;
     let _initial_recipient_ignore: ContractAddress = contract_address_const::<'INITIAL_RECIPIENT'>();
-    let _initial_minter_ignore: ContractAddress = contract_address_const::<'INITIAL_MINTER'>();
+    let initial_minter: ContractAddress = contract_address_const::<'INITIAL_MINTER'>();
     let _upgrade_delay_ignore: u64 = 0;
     Serde::serialize(@_name_ignore, ref calldata);
     Serde::serialize(@_symbol_ignore, ref calldata);
     Serde::serialize(@_decimals_ignore, ref calldata);
     Serde::serialize(@_initial_supply_ignore, ref calldata);
     Serde::serialize(@_initial_recipient_ignore, ref calldata);
-    Serde::serialize(@_initial_minter_ignore, ref calldata);
+    Serde::serialize(@initial_minter, ref calldata);
     Serde::serialize(@owner, ref calldata);
     Serde::serialize(@_upgrade_delay_ignore, ref calldata);
 
@@ -125,7 +125,7 @@ fn test_erc20_basic_operations() {
     // Mint tokens to user1 (from minter)
     let mint_amount: u256 = 1000;
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(user1, mint_amount);
+    l2tbtc.mint(user1, mint_amount);
     stop_cheat_caller_address(contract_address);
     
     // Test balance after mint
@@ -162,7 +162,7 @@ fn test_mint_and_burn() {
     // Test minting (only minters can mint)
     let mint_amount: u256 = 1000;
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(user1, mint_amount);
+    l2tbtc.mint(user1, mint_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify mint results
@@ -172,7 +172,7 @@ fn test_mint_and_burn() {
     // Test burning
     let burn_amount: u256 = 400;
     start_cheat_caller_address(contract_address, user1);
-    l2tbtc.permissioned_burn(burn_amount);
+    l2tbtc.burn(burn_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify burn results
@@ -192,7 +192,7 @@ fn test_unauthorized_mint() {
     // Try to mint tokens as unauthorized user (should fail)
     let mint_amount: u256 = 1000;
     start_cheat_caller_address(contract_address, user2);
-    l2tbtc.permissioned_mint(user1, mint_amount);
+    l2tbtc.mint(user1, mint_amount);
     stop_cheat_caller_address(contract_address);
 }
 
@@ -246,7 +246,7 @@ fn test_add_minter() {
     // Have user1 mint tokens to itself
     let mint_amount: u256 = 1000;
     start_cheat_caller_address(contract_address, user1);
-    l2tbtc.permissioned_mint(user1, mint_amount);
+    l2tbtc.mint(user1, mint_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify mint results
@@ -416,19 +416,19 @@ fn test_remove_minter_updates_list_correctly() {
 
     // Initial minters list should contain all three
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 3, 'Wrong initial minters count');
-    assert(*initial_minters.at(0) == minter1, 'Wrong minter at index 0');
-    assert(*initial_minters.at(1) == minter2, 'Wrong minter at index 1');
-    assert(*initial_minters.at(2) == minter3, 'Wrong minter at index 2');
+    assert(initial_minters.len() == 4, 'Wrong initial minters count');
+    assert(*initial_minters.at(1) == minter1, 'Wrong minter at index 0');
+    assert(*initial_minters.at(2) == minter2, 'Wrong minter at index 1');
+    assert(*initial_minters.at(3) == minter3, 'Wrong minter at index 2');
 
     // Remove middle minter (minter2)
     l2tbtc.remove_minter(minter2);
 
     // Check updated list - should have minter1 and minter3, with minter3 moved to minter2's position
     let updated_minters = l2tbtc.get_minters();
-    assert(updated_minters.len() == 2, 'Wrong final minters count');
-    assert(*updated_minters.at(0) == minter1, 'Wrong 1st minter after remove');
-    assert(*updated_minters.at(1) == minter3, 'Wrong 2nd minter after remove');
+    assert(updated_minters.len() == 3, 'Wrong final minters count');
+    assert(*updated_minters.at(1) == minter1, 'Wrong 1st minter after remove');
+    assert(*updated_minters.at(2) == minter3, 'Wrong 2nd minter after remove');
 
     stop_cheat_caller_address(contract_address);
 }
@@ -473,7 +473,7 @@ fn test_multiple_minters_addition() {
     
     // Verify initial empty state
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 0, 'Should start with no minters');
+    assert(initial_minters.len() == 1, 'Should start with no minters');
     
     // Add multiple minters
     start_cheat_caller_address(contract_address, owner);
@@ -482,25 +482,25 @@ fn test_multiple_minters_addition() {
     l2tbtc.add_minter(minter1);
     assert(l2tbtc.is_minter(minter1), 'Minter1 should be minter');
     let minters_after_first = l2tbtc.get_minters();
-    assert(minters_after_first.len() == 1, 'Should have one minter');
-    assert(*minters_after_first.at(0) == minter1, 'First minter wrong');
+    assert(minters_after_first.len() == 2, 'Should have one minter');
+    assert(*minters_after_first.at(1) == minter1, 'First minter wrong');
     
     // Add second minter and verify
     l2tbtc.add_minter(minter2);
     assert(l2tbtc.is_minter(minter2), 'Minter2 should be minter');
     let minters_after_second = l2tbtc.get_minters();
-    assert(minters_after_second.len() == 2, 'Should have two minters');
-    assert(*minters_after_second.at(0) == minter1, 'First minter changed');
-    assert(*minters_after_second.at(1) == minter2, 'Second minter wrong');
+    assert(minters_after_second.len() == 3, 'Should have two minters');
+    assert(*minters_after_second.at(1) == minter1, 'First minter changed');
+    assert(*minters_after_second.at(2) == minter2, 'Second minter wrong');
     
     // Add third minter and verify
     l2tbtc.add_minter(minter3);
     assert(l2tbtc.is_minter(minter3), 'Minter3 should be minter');
     let final_minters = l2tbtc.get_minters();
-    assert(final_minters.len() == 3, 'Should have three minters');
-    assert(*final_minters.at(0) == minter1, 'First minter changed');
-    assert(*final_minters.at(1) == minter2, 'Second minter changed');
-    assert(*final_minters.at(2) == minter3, 'Third minter wrong');
+    assert(final_minters.len() == 4, 'Should have three minters');
+    assert(*final_minters.at(1) == minter1, 'First minter changed');
+    assert(*final_minters.at(2) == minter2, 'Second minter changed');
+    assert(*final_minters.at(3) == minter3, 'Third minter wrong');
     
     // Verify all minters are still valid
     assert(l2tbtc.is_minter(minter1), 'Minter1 should still be minter');
@@ -540,10 +540,10 @@ fn test_remove_first_minter() {
     
     // Verify initial state
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 3, 'Should have three minters');
-    assert(*initial_minters.at(0) == minter1, 'First minter wrong');
-    assert(*initial_minters.at(1) == minter2, 'Second minter wrong');
-    assert(*initial_minters.at(2) == minter3, 'Third minter wrong');
+    assert(initial_minters.len() == 4, 'Should have three minters');
+    assert(*initial_minters.at(1) == minter1, 'First minter wrong');
+    assert(*initial_minters.at(2) == minter2, 'Second minter wrong');
+    assert(*initial_minters.at(3) == minter3, 'Third minter wrong');
     
     // Remove first minter
     let mut spy = spy_events();
@@ -566,9 +566,9 @@ fn test_remove_first_minter() {
     
     // Verify remaining minters
     let final_minters = l2tbtc.get_minters();
-    assert(final_minters.len() == 2, 'Should have two minters');
-    assert(*final_minters.at(0) == minter3, 'First minter wrong'); // Last minter moved to first position
-    assert(*final_minters.at(1) == minter2, 'Second minter wrong');
+    assert(final_minters.len() == 3, 'Should have two minters');
+    assert(*final_minters.at(1) == minter3, 'First minter wrong'); // Last minter moved to first position
+    assert(*final_minters.at(2) == minter2, 'Second minter wrong');
     
     // Verify remaining minters are still valid
     assert(l2tbtc.is_minter(minter2), 'Minter2 should still be minter');
@@ -594,10 +594,10 @@ fn test_remove_last_minter() {
     
     // Verify initial state
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 3, 'Should have three minters');
-    assert(*initial_minters.at(0) == minter1, 'First minter wrong');
-    assert(*initial_minters.at(1) == minter2, 'Second minter wrong');
-    assert(*initial_minters.at(2) == minter3, 'Last minter wrong');
+    assert(initial_minters.len() == 4, 'Should have three minters');
+    assert(*initial_minters.at(1) == minter1, 'First minter wrong');
+    assert(*initial_minters.at(2) == minter2, 'Second minter wrong');
+    assert(*initial_minters.at(3) == minter3, 'Last minter wrong');
     
     // Remove the last minter
     let mut spy = spy_events();
@@ -620,9 +620,9 @@ fn test_remove_last_minter() {
     
     // Verify remaining minters array
     let final_minters = l2tbtc.get_minters();
-    assert(final_minters.len() == 2, 'Should have two minters');
-    assert(*final_minters.at(0) == minter1, 'First minter wrong');
-    assert(*final_minters.at(1) == minter2, 'Second minter wrong');
+    assert(final_minters.len() == 3, 'Should have two minters');
+    assert(*final_minters.at(1) == minter1, 'First minter wrong');
+    assert(*final_minters.at(2) == minter2, 'Second minter wrong');
     
     // Verify other minters still exist
     assert(l2tbtc.is_minter(minter1), 'First minter should remain');
@@ -1334,7 +1334,7 @@ fn test_cannot_mint_when_paused() {
     
     // Attempt to mint while paused (should fail)
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(recipient, 1000);
+    l2tbtc.mint(recipient, 1000);
     stop_cheat_caller_address(contract_address);
 }
 
@@ -1355,7 +1355,7 @@ fn test_cannot_burn_when_paused() {
     
     // Mint tokens to holder
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(holder, 1000);
+    l2tbtc.mint(holder, 1000);
     stop_cheat_caller_address(contract_address);
     
     // Guardian pauses the contract
@@ -1365,7 +1365,7 @@ fn test_cannot_burn_when_paused() {
     
     // Attempt to burn while paused (should fail)
     start_cheat_caller_address(contract_address, holder);
-    l2tbtc.permissioned_burn(500);
+    l2tbtc.burn(500);
     stop_cheat_caller_address(contract_address);
 }
 
@@ -1387,7 +1387,7 @@ fn test_can_transfer_when_paused() {
     
     // Mint tokens to sender
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(sender, 1000);
+    l2tbtc.mint(sender, 1000);
     stop_cheat_caller_address(contract_address);
     
     // Guardian pauses the contract
@@ -1506,7 +1506,7 @@ fn test_functionality_after_unpause() {
     // Test minting after unpause
     let mint_amount: u256 = 1000;
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(holder, mint_amount);
+    l2tbtc.mint(holder, mint_amount);
     stop_cheat_caller_address(contract_address);
     
     assert(erc20.balance_of(holder) == mint_amount, 'Mint should succeed');
@@ -1514,7 +1514,7 @@ fn test_functionality_after_unpause() {
     // Test burning after unpause
     let burn_amount: u256 = 400;
     start_cheat_caller_address(contract_address, holder);
-    l2tbtc.permissioned_burn(burn_amount);
+    l2tbtc.burn(burn_amount);
     stop_cheat_caller_address(contract_address);
     
     assert(erc20.balance_of(holder) == mint_amount - burn_amount, 'Burn should succeed');
@@ -1544,15 +1544,15 @@ fn test_multiple_sequential_mints() {
     // First mint to recipient1
     let amount1: u256 = 1000;
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(recipient1, amount1);
+    l2tbtc.mint(recipient1, amount1);
     
     // Second mint to recipient1 (same recipient)
     let amount2: u256 = 500;
-    l2tbtc.permissioned_mint(recipient1, amount2);
+    l2tbtc.mint(recipient1, amount2);
     
     // Third mint to recipient2 (different recipient)
     let amount3: u256 = 750;
-    l2tbtc.permissioned_mint(recipient2, amount3);
+    l2tbtc.mint(recipient2, amount3);
     stop_cheat_caller_address(contract_address);
     
     // Verify balances
@@ -1577,7 +1577,7 @@ fn test_mint_zero_tokens() {
     
     // Mint zero tokens
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(recipient, 0);
+    l2tbtc.mint(recipient, 0);
     stop_cheat_caller_address(contract_address);
     
     // Verify balance and total supply remain zero
@@ -1599,7 +1599,7 @@ fn test_mint_to_self() {
     // Minter mints tokens to itself
     let amount: u256 = 1000;
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(minter, amount);
+    l2tbtc.mint(minter, amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify balance and total supply
@@ -1625,7 +1625,7 @@ fn test_mint_large_amounts() {
         340282366920938463463374607431768211455_u256; // 2^128 - 1, half of u256 max
     
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(recipient, large_amount);
+    l2tbtc.mint(recipient, large_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify balance and total supply
@@ -1634,7 +1634,7 @@ fn test_mint_large_amounts() {
     
     // Mint another large amount to test accumulation
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(recipient, large_amount);
+    l2tbtc.mint(recipient, large_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify updated balance and total supply
@@ -1658,11 +1658,11 @@ fn test_total_supply_after_multiple_mints() {
     // Mint 1 token to third party (equivalent to mint(thirdParty.address, to1e18(1)))
     let one_token: u256 = 1000000000000000000; // 1 token with 18 decimals (1e18)
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(third_party, one_token);
+    l2tbtc.mint(third_party, one_token);
     
     // Mint 3 tokens to token holder (equivalent to mint(tokenHolder.address, to1e18(3)))
     let three_tokens: u256 = 3000000000000000000; // 3 tokens with 18 decimals (3e18)
-    l2tbtc.permissioned_mint(token_holder, three_tokens);
+    l2tbtc.mint(token_holder, three_tokens);
     stop_cheat_caller_address(contract_address);
     
     // Check total supply (should be 4 tokens = 4e18)
@@ -1685,7 +1685,7 @@ fn test_balance_of() {
     // Mint 7 tokens to token holder (equivalent to 7e18)
     let balance: u256 = 7000000000000000000; // 7 tokens with 18 decimals
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, balance);
+    l2tbtc.mint(token_holder, balance);
     stop_cheat_caller_address(contract_address);
     
     // Verify balance
@@ -1707,7 +1707,7 @@ fn test_transfer() {
     // Initial setup - mint 70 tokens to token holder (70e18)
     let initial_balance: u256 = 70000000000000000000; // 70 tokens with 18 decimals
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_balance);
+    l2tbtc.mint(token_holder, initial_balance);
     stop_cheat_caller_address(contract_address);
     
     // Transfer 5 tokens (5e18) from token holder to third party
@@ -1745,7 +1745,7 @@ fn test_transfer_event_emission() {
     // Initial setup - mint 70 tokens to token holder
     let initial_balance: u256 = 70000000000000000000; // 70e18
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_balance);
+    l2tbtc.mint(token_holder, initial_balance);
     stop_cheat_caller_address(contract_address);
     
     // Setup event spy
@@ -1794,7 +1794,7 @@ fn test_transfer_from() {
     // Initial setup - mint 70 tokens to token holder (70e18)
     let initial_balance: u256 = 70000000000000000000; // 70 tokens with 18 decimals
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_balance);
+    l2tbtc.mint(token_holder, initial_balance);
     stop_cheat_caller_address(contract_address);
     
     // Approve third party to spend tokens
@@ -1894,7 +1894,7 @@ fn test_burn_event_emission() {
     
     let initial_amount: u256 = 1000000000000000000; // 1 token
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_amount);
+    l2tbtc.mint(token_holder, initial_amount);
     stop_cheat_caller_address(contract_address);
     
     // Setup event spy
@@ -1903,7 +1903,7 @@ fn test_burn_event_emission() {
     // Burn tokens
     let burn_amount: u256 = 500000000000000000; // 0.5 token
     start_cheat_caller_address(contract_address, token_holder);
-    l2tbtc.permissioned_burn(burn_amount);
+    l2tbtc.burn(burn_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify Transfer event was emitted (burn is a transfer to zero address)
@@ -1938,13 +1938,13 @@ fn test_burn_insufficient_balance() {
     
     let initial_amount: u256 = 1000000000000000000; // 1 token
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_amount);
+    l2tbtc.mint(token_holder, initial_amount);
     stop_cheat_caller_address(contract_address);
     
     // Attempt to burn more than balance
     let burn_amount: u256 = 2000000000000000000; // 2 tokens
     start_cheat_caller_address(contract_address, token_holder);
-    l2tbtc.permissioned_burn(burn_amount); // Should panic with underflow
+    l2tbtc.burn(burn_amount); // Should panic with underflow
     stop_cheat_caller_address(contract_address);
 }
 
@@ -1962,12 +1962,12 @@ fn test_burn_zero_tokens() {
     
     let initial_amount: u256 = 1000000000000000000; // 1 token
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_amount);
+    l2tbtc.mint(token_holder, initial_amount);
     stop_cheat_caller_address(contract_address);
     
     // Burn zero tokens
     start_cheat_caller_address(contract_address, token_holder);
-    l2tbtc.permissioned_burn(0);
+    l2tbtc.burn(0);
     stop_cheat_caller_address(contract_address);
     
     // Verify balance hasn't changed
@@ -1990,12 +1990,12 @@ fn test_unauthorized_burn_attempt() {
     
     let initial_amount: u256 = 1000000000000000000; // 1 token
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_amount);
+    l2tbtc.mint(token_holder, initial_amount);
     stop_cheat_caller_address(contract_address);
     
     // Attempt to burn token_holder's tokens from attacker account
     start_cheat_caller_address(contract_address, attacker);
-    l2tbtc.permissioned_burn(initial_amount); // Should panic due to insufficient balance
+    l2tbtc.burn(initial_amount); // Should panic due to insufficient balance
     stop_cheat_caller_address(contract_address);
 }
 
@@ -2013,12 +2013,12 @@ fn test_burn_entire_balance() {
     
     let initial_amount: u256 = 1000000000000000000; // 1 token
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_amount);
+    l2tbtc.mint(token_holder, initial_amount);
     stop_cheat_caller_address(contract_address);
     
     // Burn entire balance
     start_cheat_caller_address(contract_address, token_holder);
-    l2tbtc.permissioned_burn(initial_amount);
+    l2tbtc.burn(initial_amount);
     stop_cheat_caller_address(contract_address);
     
     // Verify balance is zero
@@ -2044,7 +2044,7 @@ fn test_burn_from() {
     
     let initial_balance: u256 = 18000000000000000000; // 18e18
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_balance);
+    l2tbtc.mint(token_holder, initial_balance);
     stop_cheat_caller_address(contract_address);
     
     // Approve third party to burn tokens (9 tokens)
@@ -2101,7 +2101,7 @@ fn test_burn_from_without_approval() {
     
     let initial_balance: u256 = 18000000000000000000; // 18e18
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_balance);
+    l2tbtc.mint(token_holder, initial_balance);
     stop_cheat_caller_address(contract_address);
     
     // Attempt to burn_from without approval
@@ -2127,7 +2127,7 @@ fn test_burn_from_insufficient_balance() {
     
     let initial_balance: u256 = 5000000000000000000; // 5e18
     start_cheat_caller_address(contract_address, minter);
-    l2tbtc.permissioned_mint(token_holder, initial_balance);
+    l2tbtc.mint(token_holder, initial_balance);
     stop_cheat_caller_address(contract_address);
     
     // Approve large amount
