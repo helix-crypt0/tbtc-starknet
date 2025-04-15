@@ -259,17 +259,12 @@ pub mod L2TBTC {
         _decimals_ignore: u8,
         _initial_supply_ignore: u256,
         _initial_recipient_ignore: ContractAddress,
-        initial_minter: ContractAddress,
+        _initial_minter_ignore: ContractAddress,
         owner: ContractAddress,
         _upgrade_delay_ignore: u64,
     ) {
         self.erc20.initializer("Starknet tBTC", "tBTC");
         self.ownable.initializer(owner);
-        
-        // Add initial minter
-        self.is_minter_map.entry(initial_minter).write(true);
-        self.minters.push(initial_minter);
-        self.emit(MinterAdded { minter: initial_minter });
     }
 
     /// @notice Internal implementation for role access control

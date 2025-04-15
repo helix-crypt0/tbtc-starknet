@@ -416,19 +416,19 @@ fn test_remove_minter_updates_list_correctly() {
 
     // Initial minters list should contain all three
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 4, 'Wrong initial minters count');
-    assert(*initial_minters.at(1) == minter1, 'Wrong minter at index 0');
-    assert(*initial_minters.at(2) == minter2, 'Wrong minter at index 1');
-    assert(*initial_minters.at(3) == minter3, 'Wrong minter at index 2');
+    assert(initial_minters.len() == 3, 'Wrong initial minters count');
+    assert(*initial_minters.at(0) == minter1, 'Wrong minter at index 0');
+    assert(*initial_minters.at(1) == minter2, 'Wrong minter at index 1');
+    assert(*initial_minters.at(2) == minter3, 'Wrong minter at index 2');
 
     // Remove middle minter (minter2)
     l2tbtc.remove_minter(minter2);
 
     // Check updated list - should have minter1 and minter3, with minter3 moved to minter2's position
     let updated_minters = l2tbtc.get_minters();
-    assert(updated_minters.len() == 3, 'Wrong final minters count');
-    assert(*updated_minters.at(1) == minter1, 'Wrong 1st minter after remove');
-    assert(*updated_minters.at(2) == minter3, 'Wrong 2nd minter after remove');
+    assert(updated_minters.len() == 2, 'Wrong final minters count');
+    assert(*updated_minters.at(0) == minter1, 'Wrong 1st minter after remove');
+    assert(*updated_minters.at(1) == minter3, 'Wrong 2nd minter after remove');
 
     stop_cheat_caller_address(contract_address);
 }
@@ -473,7 +473,7 @@ fn test_multiple_minters_addition() {
     
     // Verify initial empty state
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 1, 'Should start with no minters');
+    assert(initial_minters.len() == 0, 'Should start with no minters');
     
     // Add multiple minters
     start_cheat_caller_address(contract_address, owner);
@@ -482,25 +482,25 @@ fn test_multiple_minters_addition() {
     l2tbtc.add_minter(minter1);
     assert(l2tbtc.is_minter(minter1), 'Minter1 should be minter');
     let minters_after_first = l2tbtc.get_minters();
-    assert(minters_after_first.len() == 2, 'Should have one minter');
-    assert(*minters_after_first.at(1) == minter1, 'First minter wrong');
+    assert(minters_after_first.len() == 1, 'Should have one minter');
+    assert(*minters_after_first.at(0) == minter1, 'First minter wrong');
     
     // Add second minter and verify
     l2tbtc.add_minter(minter2);
     assert(l2tbtc.is_minter(minter2), 'Minter2 should be minter');
     let minters_after_second = l2tbtc.get_minters();
-    assert(minters_after_second.len() == 3, 'Should have two minters');
-    assert(*minters_after_second.at(1) == minter1, 'First minter changed');
-    assert(*minters_after_second.at(2) == minter2, 'Second minter wrong');
+    assert(minters_after_second.len() == 2, 'Should have two minters');
+    assert(*minters_after_second.at(0) == minter1, 'First minter changed');
+    assert(*minters_after_second.at(1) == minter2, 'Second minter wrong');
     
     // Add third minter and verify
     l2tbtc.add_minter(minter3);
     assert(l2tbtc.is_minter(minter3), 'Minter3 should be minter');
     let final_minters = l2tbtc.get_minters();
-    assert(final_minters.len() == 4, 'Should have three minters');
-    assert(*final_minters.at(1) == minter1, 'First minter changed');
-    assert(*final_minters.at(2) == minter2, 'Second minter changed');
-    assert(*final_minters.at(3) == minter3, 'Third minter wrong');
+    assert(final_minters.len() == 3, 'Should have three minters');
+    assert(*final_minters.at(0) == minter1, 'First minter changed');
+    assert(*final_minters.at(1) == minter2, 'Second minter changed');
+    assert(*final_minters.at(2) == minter3, 'Third minter wrong');
     
     // Verify all minters are still valid
     assert(l2tbtc.is_minter(minter1), 'Minter1 should still be minter');
@@ -540,10 +540,10 @@ fn test_remove_first_minter() {
     
     // Verify initial state
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 4, 'Should have three minters');
-    assert(*initial_minters.at(1) == minter1, 'First minter wrong');
-    assert(*initial_minters.at(2) == minter2, 'Second minter wrong');
-    assert(*initial_minters.at(3) == minter3, 'Third minter wrong');
+    assert(initial_minters.len() == 3, 'Should have three minters');
+    assert(*initial_minters.at(0) == minter1, 'First minter wrong');
+    assert(*initial_minters.at(1) == minter2, 'Second minter wrong');
+    assert(*initial_minters.at(2) == minter3, 'Third minter wrong');
     
     // Remove first minter
     let mut spy = spy_events();
@@ -566,9 +566,9 @@ fn test_remove_first_minter() {
     
     // Verify remaining minters
     let final_minters = l2tbtc.get_minters();
-    assert(final_minters.len() == 3, 'Should have two minters');
-    assert(*final_minters.at(1) == minter3, 'First minter wrong'); // Last minter moved to first position
-    assert(*final_minters.at(2) == minter2, 'Second minter wrong');
+    assert(final_minters.len() == 2, 'Should have two minters');
+    assert(*final_minters.at(0) == minter3, 'First minter wrong'); // Last minter moved to first position
+    assert(*final_minters.at(1) == minter2, 'Second minter wrong');
     
     // Verify remaining minters are still valid
     assert(l2tbtc.is_minter(minter2), 'Minter2 should still be minter');
@@ -594,10 +594,10 @@ fn test_remove_last_minter() {
     
     // Verify initial state
     let initial_minters = l2tbtc.get_minters();
-    assert(initial_minters.len() == 4, 'Should have three minters');
-    assert(*initial_minters.at(1) == minter1, 'First minter wrong');
-    assert(*initial_minters.at(2) == minter2, 'Second minter wrong');
-    assert(*initial_minters.at(3) == minter3, 'Last minter wrong');
+    assert(initial_minters.len() == 3, 'Should have three minters');
+    assert(*initial_minters.at(0) == minter1, 'First minter wrong');
+    assert(*initial_minters.at(1) == minter2, 'Second minter wrong');
+    assert(*initial_minters.at(2) == minter3, 'Last minter wrong');
     
     // Remove the last minter
     let mut spy = spy_events();
@@ -620,9 +620,9 @@ fn test_remove_last_minter() {
     
     // Verify remaining minters array
     let final_minters = l2tbtc.get_minters();
-    assert(final_minters.len() == 3, 'Should have two minters');
-    assert(*final_minters.at(1) == minter1, 'First minter wrong');
-    assert(*final_minters.at(2) == minter2, 'Second minter wrong');
+    assert(final_minters.len() == 2, 'Should have two minters');
+    assert(*final_minters.at(0) == minter1, 'First minter wrong');
+    assert(*final_minters.at(1) == minter2, 'Second minter wrong');
     
     // Verify other minters still exist
     assert(l2tbtc.is_minter(minter1), 'First minter should remain');
