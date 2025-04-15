@@ -20,7 +20,6 @@ fn OWNER() -> ContractAddress {
 }
 
 fn token_deploy_args(
-    minter: ContractAddress,
     owner: ContractAddress,
 ) -> Array<felt252> {
     let mut calldata = ArrayTrait::new();
@@ -29,13 +28,14 @@ fn token_deploy_args(
     let _decimals_ignore: u8 = 0;
     let _initial_supply_ignore: u256 = 0;
     let _initial_recipient_ignore: ContractAddress = contract_address_const::<'INITIAL_RECIPIENT'>();
+    let _initial_minter_ignore: ContractAddress = contract_address_const::<'INITIAL_MINTER'>();
     let _upgrade_delay_ignore: u64 = 0;
     Serde::serialize(@_name_ignore, ref calldata);
     Serde::serialize(@_symbol_ignore, ref calldata);
     Serde::serialize(@_decimals_ignore, ref calldata);
     Serde::serialize(@_initial_supply_ignore, ref calldata);
     Serde::serialize(@_initial_recipient_ignore, ref calldata);
-    Serde::serialize(@minter, ref calldata);
+    Serde::serialize(@_initial_minter_ignore, ref calldata);
     Serde::serialize(@owner, ref calldata);
     Serde::serialize(@_upgrade_delay_ignore, ref calldata);
 
@@ -45,11 +45,10 @@ fn token_deploy_args(
 fn setup() -> (ERC20ABIDispatcher, IL2TBTCDispatcher, ContractAddress, ContractAddress) {
     // Setup
     let owner = OWNER();
-    let initial_minter = contract_address_const::<'INITIAL_MINTER'>();
     
     // Deploy contract
     let contract = declare("L2TBTC").unwrap().contract_class();
-    let constructor_args = token_deploy_args(initial_minter, owner);
+    let constructor_args = token_deploy_args(owner);
     let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
     let erc20 = ERC20ABIDispatcher { contract_address };
     let l2tbtc = IL2TBTCDispatcher { contract_address };
