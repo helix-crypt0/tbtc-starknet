@@ -16,7 +16,7 @@ pub trait IL2TBTC<TContractState> {
     /// @param value: u256 - The amount of tokens to burn
     fn burn(ref self: TContractState, value: u256);
 
-    /// @notice Burn tokens from an account, using the caller's allowance
+    /// @notice Burn tokens from an account due to permissioned authority
     /// @dev Only minters can burn tokens
     /// @param account: ContractAddress - The address whose tokens will be burned
     /// @param value: u256 - The amount of tokens to burn
@@ -448,6 +448,10 @@ pub mod L2TBTC {
             self.erc20.burn(get_caller_address(), value);
         }
 
+        /// @notice Burn tokens from an account due to permissioned authority
+        /// @dev Only minters can burn tokens
+        /// @param account: ContractAddress - The address whose tokens will be burned
+        /// @param value: u256 - The amount of tokens to burn
         #[external(v0)]
         fn permissioned_burn(ref self: ContractState, account: ContractAddress, value: u256) {
             self.pausable.assert_not_paused();
