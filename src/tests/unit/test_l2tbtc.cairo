@@ -28,14 +28,14 @@ fn token_deploy_args(
     let _decimals_ignore: u8 = 0;
     let _initial_supply_ignore: u256 = 0;
     let _initial_recipient_ignore: ContractAddress = contract_address_const::<'INITIAL_RECIPIENT'>();
-    let initial_minter: ContractAddress = contract_address_const::<'INITIAL_MINTER'>();
+    let _initial_minter_ignore: ContractAddress = contract_address_const::<'INITIAL_MINTER'>();
     let _upgrade_delay_ignore: u64 = 0;
     Serde::serialize(@_name_ignore, ref calldata);
     Serde::serialize(@_symbol_ignore, ref calldata);
     Serde::serialize(@_decimals_ignore, ref calldata);
     Serde::serialize(@_initial_supply_ignore, ref calldata);
     Serde::serialize(@_initial_recipient_ignore, ref calldata);
-    Serde::serialize(@initial_minter, ref calldata);
+    Serde::serialize(@_initial_minter_ignore, ref calldata);
     Serde::serialize(@owner, ref calldata);
     Serde::serialize(@_upgrade_delay_ignore, ref calldata);
 
