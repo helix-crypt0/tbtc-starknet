@@ -413,7 +413,7 @@ pub mod L2TBTC {
         #[external(v0)]
         fn pause(ref self: ContractState) {
             let caller = get_caller_address();
-            assert(InternalRolesImpl::is_guardian(@self, caller), 'Caller is not a guardian');
+            assert(InternalRolesImpl::is_guardian(@self, caller), NOT_GUARDIAN);
             self.pausable.pause();
         }
 

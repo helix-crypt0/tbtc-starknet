@@ -359,7 +359,7 @@ fn test_guardian_cannot_remove_minter() {
 }
 
 #[test]
-#[should_panic(expected: ('Caller is not a guardian',))]
+#[should_panic(expected: ('Not a guardian',))]
 fn test_unauthorized_pause() {
     // Setup
     let user1 = contract_address_const::<'USER1'>(); // Unauthorized user
@@ -1299,7 +1299,7 @@ fn test_guardian_can_pause() {
 }
 
 #[test]
-#[should_panic(expected: ('Caller is not a guardian',))]
+#[should_panic(expected: ('Not a guardian',))]
 fn test_non_guardian_cannot_pause() {
     // Setup using helper function
     let (_, l2tbtc, contract_address, _) = setup();
